@@ -1,0 +1,12 @@
+--- odoo-fix/buhanga_dashboard.before.js	2026-10-19 02:10:32.028050611 +0000
++++ odoo-fix/buhanga_dashboard.fixed.js	2026-10-19 02:10:32.055050611 +0000
+@@ -776,8 +776,7 @@
+                         views: [[false, 'list'], [false, 'form']],
+                         domain: [['state', '=', 'cancel']],
+                         context: {
+-                            'search_default_state_cancel': 1,
+-                            'default_state': 'cancel'
++                            'search_default_state_cancel': 1
+                         },
+                         target: 'current'
+                     });

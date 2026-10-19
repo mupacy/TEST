@@ -1,0 +1,5 @@
+.venv/
+apt/
+sysroot/
+__pycache__/
+*.log

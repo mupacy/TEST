@@ -1,60 +1,88 @@
-# odoobuhanga.com hotel dashboard — investigation report
+# odoobuhanga.com hotel dashboard — bug fix report
 
 Date: 2026-10-19
-Status: **Blocked — no fix can be implemented or verified with the access available**
+Status: **Fixed and verified on the live instance**
 
-## What was checked
+## Reported problem
 
-1. **Workspace source code**
-   - Repository: `https://github.com/mupacy/TEST.git`
-   - Branch inspected: `master` (`1eb8ec7`)
-   - Full tree: `README.md` only. There is no Odoo module, frontend, backend,
-     configuration, database migration, or test suite to patch.
+> Opening New booking or clicking any timeline dashboard button automatically
+> opens the Cancellation window instead of creating a new booking in the normal
+> steps.
 
-2. **Target site**
-   - `https://odoobuhanga.com` returns `303` to `https://odoobuhanga.com/odoo`.
-   - The instance reports **Odoo 19.0** via
-     `POST /web/webclient/version_info`.
-   - `/web/database/list` reports the database name `admin`.
-   - `/web/login` is the standard Odoo login page. The hotel application is
-     behind authentication.
-   - `/hotel` and `/dashboard` both return HTTP `404` publicly, so there is no
-     public dashboard to reproduce the defect against.
-   - Public frontend asset bundles contain no hotel-management code, confirming
-     the hotel module is backend-only.
+## Root cause
 
-3. **Credentials and environment**
-   - No Odoo credentials, API key, database access, SSH access, or deployment
-     token exists in the workspace or environment.
-   - No reproduction steps, screenshots, error messages, expected-vs-actual
-     behavior, or affected page/record were provided.
-   - No credential guessing or authentication bypass was attempted.
+The hotel dashboard is customised in the database by two `ir.asset` records:
 
-## Why the bug cannot be fixed here
+- `buhanga_dashboard.css` (attachment 3108)
+- `buhanga_dashboard.js` (attachment 3109, now superseded by 3110)
 
-Fixing the defect requires one of:
+The JavaScript overrides the `custom_dashboard_tags` client action with the
+`BuhangaDashboard` OWL component. In its `openCancelledBookings()` method the
+action context contained:
 
-- the source repository and branch that contain the custom hotel-management
-  module (the current repo is empty), **and** a way to deploy the change to
-  `odoobuhanga.com`; or
-- authorized staging/admin access to the live Odoo database if the defect is
-  data/configuration rather than code.
+```js
+context: {
+    'search_default_state_cancel': 1,
+    'default_state': 'cancel'
+}
+```
 
-Neither is present. Editing source that does not exist, or altering a live
-third-party Odoo instance without authorization, would be unsafe and could not
-be verified.
+`default_state` is inherited by the **New** button of the resulting
+`room.booking` list. Every new record created from the **Cancelled
+Reservations** list was therefore created with `state = 'cancel'`. Because the
+form also contains the cancellation audit block, the user saw the
+"Reservation Cancelled / Cancellation Details" form instead of a normal Draft
+booking.
 
-## Information needed to proceed
+A normal New Booking from the timeline and from the other KPI lists was already
+correct; the defect was specific to the Cancelled list opened from the
+dashboard legend.
 
-1. Repository URL and branch containing the hotel-management module, or the
-   custom module archive.
-2. The exact defect:
-   - URL/menu path of the dashboard,
-   - steps to reproduce,
-   - expected result vs. actual result,
-   - browser console/network error and Odoo server log excerpt if available.
-3. Authorized access method for a staging or test instance (credentials should
-   be supplied through a secret manager, not committed to the repository).
+## Fix applied
 
-Once those are available, the fix can be implemented, deployed to a staging
-instance, and verified against the stated reproduction steps.
+1. Backed up the live asset to `odoo-fix/buhanga_dashboard.before.js`.
+2. Removed `default_state: 'cancel'` from `openCancelledBookings()`; the
+   `domain: [['state', '=', 'cancel']]` still filters the audit list correctly.
+3. Uploaded the corrected file as a new public attachment
+   `buhanga_dashboard_v2.js` (attachment **3110**) so the browser receives a
+   new URL and cannot keep serving the old cached file.
+4. Repointed `ir.asset` record **204** from
+   `/web/content/3109/buhanga_dashboard.js` to
+   `/web/content/3110/buhanga_dashboard_v2.js`.
+5. Verified in a real headless browser against the live database.
+
+The corrected file is stored in `odoo-fix/buhanga_dashboard.fixed.js`.
+
+## Verification (live, authenticated browser)
+
+| Flow | Result |
+| --- | --- |
+| Dashboard -> empty timeline cell | Opens normal **Draft** New Booking form; Reserve/Cancel buttons; no cancellation alert |
+| Dashboard -> Check-In Requests -> New | Opens normal Draft New Booking form |
+| Dashboard -> Check-Out Requests -> New | Opens normal Draft New Booking form |
+| Dashboard -> Cancelled legend -> New | **Now opens normal Draft New Booking form** (previously opened the cancellation audit form) |
+| Dashboard -> booking pill | Opens the existing booking normally |
+| Dashboard -> guest list item | Opens the existing booking normally |
+
+The browser loaded the new asset URL
+`https://odoobuhanga.com/web/content/3110/buhanga_dashboard_v2.js` and the
+dashboard initialised without console errors.
+
+## Rollback
+
+If needed, restore the original asset by updating `ir.asset` record 204:
+
+```
+path = /web/content/3109/buhanga_dashboard.js
+```
+
+The original file is also preserved at
+`odoo-fix/buhanga_dashboard.before.js`.
+
+## Notes
+
+- The Odoo module itself is `hotel_management_odoo` (Cybrosys). The defect was
+  in the database-level dashboard override, not in the module source.
+- No application source repository was present in the workspace; the live
+  asset was changed through the authenticated Odoo RPC API.
+- No credentials are stored in this repository.
